@@ -20,3 +20,10 @@ export interface TransportFrame {
   total: number;
   data: string;
 }
+
+export interface Certificate {
+  subject: string;
+  issuer: string;
+  publicKey: string;
+  signature: string;
+}

@@ -1,9 +1,11 @@
-import net from 'net';
-import readline from 'readline';
+import net from 'node:net';
+import http from 'node:http';
+import readline from 'node:readline';
 import { v4 as uuidv4 } from 'uuid';
 import { getNextHop } from './router.js';
-import type { AppMessage, TopologyData, TransportFrame } from './types.js';
+import type { AppMessage, TopologyData, TransportFrame, Certificate } from './types.js';
 import topologyData from '../topology.json' with { type: 'json' };
+import { generateKeyPair } from './cryptoUtils.js';
 
 const topology = (topologyData as TopologyData).nodes;
 const rawId = process.argv[2];
@@ -24,6 +26,44 @@ const MTU = 128;
 const reassemblyBuffer = new Map<string, { total: number; chunks: Map<number, string> }>();
 
 const seenBroadcasts = new Set<string>();
+
+const { publicKey, privateKey } = generateKeyPair();
+let myCertificate: Certificate | null = null;
+let caPublicKey: string | null = null;
+
+function registerWithCA() {
+  const postData = JSON.stringify({ id: MY_ID, publicKey });
+
+  const req = http.request(
+    {
+      hostname: 'localhost',
+      port: 3000,
+      path: '/sign',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        const response = JSON.parse(data);
+        myCertificate = response.certificate;
+        caPublicKey = response.caPublicKey;
+        console.log(`[CRYPTO] Certificate Signed by CA. Ready.`);
+      });
+    },
+  );
+
+  req.on('error', (e) => {
+    console.error(`[CRYPTO] Could not connect to CA: ${e.message}`);
+    console.error(`[CRYPTO] Is the CA server running? (npx tsx src/ca.ts)`);
+  });
+
+  req.write(postData);
+  req.end();
+}
+
+registerWithCA();
 
 const server = net.createServer((socket) => {
   socket.on('data', (data) => {
