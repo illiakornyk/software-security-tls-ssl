@@ -1,7 +1,6 @@
 import http from 'node:http';
+import 'dotenv/config';
 import { generateKeyPair, signCertificate, verifySignature } from './cryptoUtils.js';
-
-const PORT = 3000;
 
 console.log('[CA] Generating Root Keys...');
 const { publicKey: CA_PUBLIC_KEY, privateKey: CA_PRIVATE_KEY } = generateKeyPair();
@@ -53,6 +52,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`[CA] Listening on http://localhost:${PORT}`);
+server.listen(process.env.CA_PORT, () => {
+  console.log(`[CA] Listening on http://localhost:${process.env.CA_PORT}`);
 });

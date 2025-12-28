@@ -2,6 +2,7 @@ import net from 'node:net';
 import http from 'node:http';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
+import 'dotenv/config';
 import { v4 as uuidv4 } from 'uuid';
 import { getNextHop } from './router.js';
 import type {
@@ -14,9 +15,11 @@ import type {
 } from './types.js';
 import topologyData from '../topology.json' with { type: 'json' };
 import { generateKeyPair, publicEncrypt, privateDecrypt } from './cryptoUtils.js';
+import { MTU } from './constants.js';
 
 const topology = (topologyData as TopologyData).nodes;
 const rawId = process.argv[2];
+
 if (!rawId || !topology[rawId]) {
   console.error(`Error: Node ID "${rawId}" not found in topology.json`);
   process.exit(1);
@@ -24,16 +27,15 @@ if (!rawId || !topology[rawId]) {
 const MY_ID = rawId;
 
 const myNodeConfig = topology[MY_ID];
+
 if (!myNodeConfig) {
   throw new Error(`Critical: Node config for ${MY_ID} is undefined`);
 }
 const MY_PORT = myNodeConfig.port;
 
-const MTU = 128;
-
 const reassemblyBuffer = new Map<string, { total: number; chunks: Map<number, string> }>();
 
-const seenBroadcasts = new Set<string>();
+const seenFragments = new Set<string>();
 
 const securitySessions = new Map<string, SecurityContext>();
 
@@ -53,8 +55,8 @@ function registerWithCA() {
 
   const req = http.request(
     {
-      hostname: 'localhost',
-      port: 3000,
+      hostname: process.env.CA_HOST,
+      port: process.env.CA_PORT,
       path: '/sign',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -66,14 +68,14 @@ function registerWithCA() {
         const response = JSON.parse(data);
         myCertificate = response.certificate;
         caPublicKey = response.caPublicKey;
-        console.log(`[CRYPTO] Certificate Signed by CA. Ready.`);
+        console.log(`[Crypto] Certificate Signed by CA. Ready.`);
       });
     },
   );
 
   req.on('error', (e) => {
-    console.error(`[CRYPTO] Could not connect to CA: ${e.message}`);
-    console.error(`[CRYPTO] Is the CA server running? (npx tsx src/ca.ts)`);
+    console.error(`[Crypto] Could not connect to CA: ${e.message}`);
+    console.error(`[Crypto] Is the CA server running? (npx tsx src/ca.ts)`);
   });
 
   req.write(postData);
@@ -101,13 +103,19 @@ server.listen(MY_PORT, () => {
 
 function handleFrame(frame: TransportFrame) {
   if (frame.dst === 'BROADCAST') {
-    if (seenBroadcasts.has(frame.id)) return;
-    seenBroadcasts.add(frame.id);
+    const fragmentKey = `${frame.id}:${frame.seq}`;
+
+    if (seenFragments.has(fragmentKey)) return;
+    seenFragments.add(fragmentKey);
+
+    if (frame.src === MY_ID) {
+      return;
+    }
+
+    broadcastToNeighbors(frame);
 
     processReassembly(frame, (appMsg) => {
       console.log(`\n>>> [BROADCAST RECEIVED] From Node ${frame.src}:`, appMsg.payload);
-
-      broadcastToNeighbors(frame);
       promptUser();
     });
     return;
@@ -119,7 +127,6 @@ function handleFrame(frame: TransportFrame) {
         handleHandshakeMsg(frame.src, appMsg.payload);
         return;
       }
-
       console.log(`\n>>> [RECEIVED] From Node ${frame.src}:`, appMsg.payload);
       promptUser();
     });
@@ -210,6 +217,11 @@ function sendAppMessage(target: string, type: 'DATA' | 'HANDSHAKE' | 'BROADCAST'
 }
 
 function sendFrameOverWire(frame: TransportFrame) {
+  if (frame.dst === 'BROADCAST') {
+    broadcastToNeighbors(frame);
+    return;
+  }
+
   const nextHop = getNextHop(MY_ID, frame.dst);
   if (!nextHop) return;
 
@@ -226,41 +238,7 @@ function sendFrameOverWire(frame: TransportFrame) {
   });
 
   client.on('error', (err) => {
-    console.error(`[NETWORK FAIL] Could not connect to next hop (Port ${nextPort}). Is Node online?`);
-  });
-}
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-function promptUser() {
-  rl.question(`Node ${MY_ID} > `, (line) => {
-    const [cmd, target, ...text] = line.split(' ');
-
-    if (cmd === 'connect' && target) {
-      console.log(`[HANDSHAKE] Initiating TLS with Node ${target}...`);
-
-      const session = getSession(target);
-      session.state = 'HANDSHAKE_STARTED';
-      session.myRandom = crypto.randomBytes(16).toString('hex');
-
-      sendAppMessage(target, 'HANDSHAKE', {
-        step: 'CLIENT_HELLO',
-        random: session.myRandom,
-      });
-    } else if (cmd === 'send' && target && text.length > 0) {
-      sendAppMessage(target, 'DATA', text.join(' '));
-    } else if (cmd === 'broadcast' && target) {
-      const broadcastMsg = [target, ...text].join(' ');
-      sendAppMessage('BROADCAST', 'BROADCAST', broadcastMsg);
-    } else {
-      if (line.trim() !== '') {
-        console.log('Usage:');
-        console.log('  connect <targetID>   -> Start TLS Handshake');
-        console.log('  send <targetID> <msg> -> Send text message');
-        console.log('  broadcast <msg>      -> Send to everyone');
-      }
-      promptUser();
-    }
+    console.error(`[NETWORK FAIL] ...`);
   });
 }
 
@@ -296,10 +274,10 @@ async function handleHandshakeMsg(src: string, payload: HandshakePayload) {
 
       const isValid = await verifyWithCA(session.peerCert);
       if (!isValid) {
-        console.error(`[SECURITY] ALERT! Node ${src} has an INVALID certificate! Aborting.`);
+        console.error(`[Security] ALERT! Node ${src} has an INVALID certificate! Aborting.`);
         return;
       }
-      console.log(`[SECURITY] Node ${src} verified successfully.`);
+      console.log(`[Security] Node ${src} verified successfully.`);
 
       session.premasterSecret = crypto.randomBytes(32).toString('hex');
 
@@ -320,7 +298,7 @@ async function handleHandshakeMsg(src: string, payload: HandshakePayload) {
       try {
         session.premasterSecret = privateDecrypt(payload.data!, privateKey);
         deriveSessionKey(session);
-        console.log(`[SECURITY] Session Key Derived.`);
+        console.log(`[Security] Session key derived.`);
 
         sendReadyMessage(src, session, 'READY_SERVER');
       } catch (e) {
@@ -330,7 +308,7 @@ async function handleHandshakeMsg(src: string, payload: HandshakePayload) {
 
     case 'READY_CLIENT':
       if (decryptAndVerifyReady(payload.data!, session)) {
-        console.log(`\n✅ [SECURE CHANNEL ESTABLISHED] with Node ${src}\n`);
+        console.log(`\n [Secure channel established] with Node ${src}\n`);
         session.state = 'SECURE';
         promptUser();
       }
@@ -338,7 +316,7 @@ async function handleHandshakeMsg(src: string, payload: HandshakePayload) {
 
     case 'READY_SERVER':
       if (decryptAndVerifyReady(payload.data!, session)) {
-        console.log(`\n✅ [SECURE CHANNEL ESTABLISHED] with Node ${src}\n`);
+        console.log(`\n [Secure channel established] with Node ${src}\n`);
         session.state = 'SECURE';
         promptUser();
       }
@@ -373,8 +351,8 @@ function verifyWithCA(cert: any): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.request(
       {
-        hostname: 'localhost',
-        port: 3000,
+        hostname: process.env.CA_HOST,
+        port: process.env.CA_PORT,
         path: '/verify',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -387,5 +365,39 @@ function verifyWithCA(cert: any): Promise<boolean> {
     );
     req.write(JSON.stringify({ certificate: cert }));
     req.end();
+  });
+}
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+function promptUser() {
+  rl.question(`Node ${MY_ID} > `, (line) => {
+    const [cmd, target, ...text] = line.split(' ');
+
+    if (cmd === 'connect' && target) {
+      console.log(`[HANDSHAKE] Initiating TLS with Node ${target}...`);
+
+      const session = getSession(target);
+      session.state = 'HANDSHAKE_STARTED';
+      session.myRandom = crypto.randomBytes(16).toString('hex');
+
+      sendAppMessage(target, 'HANDSHAKE', {
+        step: 'CLIENT_HELLO',
+        random: session.myRandom,
+      });
+    } else if (cmd === 'send' && target && text.length > 0) {
+      sendAppMessage(target, 'DATA', text.join(' '));
+    } else if (cmd === 'broadcast' && target) {
+      const broadcastMsg = [target, ...text].join(' ');
+      sendAppMessage('BROADCAST', 'BROADCAST', broadcastMsg);
+    } else {
+      if (line.trim() !== '') {
+        console.log('Usage:');
+        console.log('  connect <targetID>   -> Start TLS Handshake');
+        console.log('  send <targetID> <msg> -> Send text message');
+        console.log('  broadcast <msg>      -> Send to everyone');
+      }
+      promptUser();
+    }
   });
 }
