@@ -23,6 +23,8 @@ const MTU = 128;
 
 const reassemblyBuffer = new Map<string, { total: number; chunks: Map<number, string> }>();
 
+const seenBroadcasts = new Set<string>();
+
 const server = net.createServer((socket) => {
   socket.on('data', (data) => {
     try {
@@ -41,35 +43,59 @@ server.listen(MY_PORT, () => {
 });
 
 function handleFrame(frame: TransportFrame) {
+  if (frame.dst === 'BROADCAST') {
+    if (seenBroadcasts.has(frame.id)) return;
+    seenBroadcasts.add(frame.id);
+
+    processReassembly(frame, (appMsg) => {
+      console.log(`\n>>> [BROADCAST RECEIVED] From Node ${frame.src}:`, appMsg.payload);
+      broadcastToNeighbors(frame);
+    });
+    return;
+  }
+
   if (frame.dst === MY_ID) {
-    if (!reassemblyBuffer.has(frame.id)) {
-      reassemblyBuffer.set(frame.id, { total: frame.total, chunks: new Map() });
-      console.log(`[REASSEMBLY] Started receiving msg ${frame.id.substring(0, 4)}... (${frame.total} chunks)`);
-    }
-
-    const buffer = reassemblyBuffer.get(frame.id)!;
-    buffer.chunks.set(frame.seq, frame.data);
-
-    if (buffer.chunks.size === buffer.total) {
-      const fullString = Array.from(buffer.chunks.entries())
-        .sort((a, b) => a[0] - b[0])
-        .map((entry) => entry[1])
-        .join('');
-
-      reassemblyBuffer.delete(frame.id);
-
-      try {
-        const appMsg: AppMessage = JSON.parse(fullString);
-        console.log(`\n>>> [COMPLETE MESSAGE] From Node ${frame.src}:`, appMsg);
-        promptUser();
-      } catch (e) {
-        console.error('Failed to parse reassembled JSON');
-      }
-    }
+    processReassembly(frame, (appMsg) => {
+      console.log(`\n>>> [RECEIVED] From Node ${frame.src}:`, appMsg.payload);
+      promptUser();
+    });
   } else {
-    console.log(`[ROUTING] Frame ${frame.seq}/${frame.total} for Node ${frame.dst} (via me)`);
+    console.log(`[ROUTING] Relaying frame ${frame.seq + 1}/${frame.total} for Node ${frame.dst}`);
     sendFrameOverWire(frame);
   }
+}
+function processReassembly(frame: TransportFrame, onComplete: (msg: AppMessage) => void) {
+  if (!reassemblyBuffer.has(frame.id)) {
+    reassemblyBuffer.set(frame.id, { total: frame.total, chunks: new Map() });
+  }
+  const buffer = reassemblyBuffer.get(frame.id)!;
+  buffer.chunks.set(frame.seq, frame.data);
+
+  if (buffer.chunks.size === buffer.total) {
+    const fullString = Array.from(buffer.chunks.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map((entry) => entry[1])
+      .join('');
+    reassemblyBuffer.delete(frame.id);
+    onComplete(JSON.parse(fullString));
+  }
+}
+
+function broadcastToNeighbors(frame: TransportFrame) {
+  const myNeighbors = myNodeConfig!.neighbors;
+  myNeighbors.forEach((neighborId) => {
+    const neighborNode = topology[neighborId];
+    if (!neighborNode) {
+      console.error(`[ERROR] Invalid neighbor in config: ${neighborId}`);
+      return;
+    }
+    const nextPort = neighborNode.port;
+    const client = net.createConnection({ port: nextPort }, () => {
+      client.write(JSON.stringify(frame));
+      client.end();
+    });
+    client.on('error', () => {});
+  });
 }
 
 function sendAppMessage(target: string, type: 'DATA' | 'HANDSHAKE' | 'BROADCAST', payload: any) {

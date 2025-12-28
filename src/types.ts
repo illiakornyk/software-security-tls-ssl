@@ -7,7 +7,6 @@ export interface TopologyData {
   nodes: Record<string, NodeConfig>;
 }
 
-
 export interface AppMessage {
   type: 'HANDSHAKE' | 'DATA' | 'BROADCAST';
   payload: any;
