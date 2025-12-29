@@ -9,7 +9,7 @@ export enum HandshakeStep {
 export interface HandshakePayload {
   step: HandshakeStep;
   random?: string;
-  certificate?: any;
+  certificate?: Certificate;
   data?: string;
 }
 
@@ -62,7 +62,7 @@ export interface Certificate {
 
 export interface SecurityContext {
   state: 'NONE' | 'HANDSHAKE_STARTED' | 'KEY_EXCHANGED' | 'SECURE';
-  peerCert?: any;
+  peerCert?: Certificate;
   myRandom?: string;
   peerRandom?: string;
   premasterSecret?: string;

@@ -126,6 +126,10 @@ export class HandshakeManager {
         session.peerRandom = payload.random;
         session.myRandom = crypto.randomBytes(16).toString('hex');
 
+        if (!this.myCertificate) {
+             console.error('[HANDSHAKE] My certificate is not ready yet!');
+             return;
+        }
         console.log(`[HANDSHAKE] Sending Server Certificate...`);
         this.callbacks.sendAppMessage(src, MessageType.HANDSHAKE, {
           step: HandshakeStep.SERVER_HELLO,
@@ -135,8 +139,8 @@ export class HandshakeManager {
         break;
 
       case HandshakeStep.SERVER_HELLO:
-        if (payload.random === undefined) {
-          console.error(`[ERROR] Invalid random in SERVER_HELLO from Node ${src}`);
+        if (payload.random === undefined || !payload.certificate) {
+          console.error(`[ERROR] Invalid SERVER_HELLO from Node ${src}`);
           return;
         }
         session.peerRandom = payload.random;
@@ -227,7 +231,7 @@ export class HandshakeManager {
     return data.startsWith('READY');
   }
 
-  private async verifyWithCA(cert: any): Promise<boolean> {
+  private async verifyWithCA(cert: Certificate): Promise<boolean> {
     if (!this.caPublicKey) {
       console.error('[Security] Cannot verify certificate: No CA Public Key available');
       return false;

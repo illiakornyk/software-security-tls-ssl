@@ -8,14 +8,14 @@ export function generateKeyPair() {
   });
 }
 
-export function signCertificate(data: any, caPrivateKey: string): string {
+export function signCertificate<T>(data: T, caPrivateKey: string): string {
   const sign = crypto.createSign('SHA256');
   sign.update(JSON.stringify(data));
   sign.end();
   return sign.sign(caPrivateKey, 'base64');
 }
 
-export function verifySignature(data: any, signature: string, caPublicKey: string): boolean {
+export function verifySignature<T>(data: T, signature: string, caPublicKey: string): boolean {
   const verify = crypto.createVerify('SHA256');
   verify.update(JSON.stringify(data));
   verify.end();
