@@ -33,3 +33,32 @@ export function privateDecrypt(encryptedBase64: string, privateKey: string): str
   const decrypted = crypto.privateDecrypt(privateKey, buffer);
   return decrypted.toString('utf8');
 }
+
+export function symmetricEncrypt(text: string, keyHex: string): { iv: string; content: string; authTag: string } {
+  const iv = crypto.randomBytes(12);
+  const key = Buffer.from(keyHex, 'hex');
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+
+  let encrypted = cipher.update(text, 'utf8', 'base64');
+  encrypted += cipher.final('base64');
+  const authTag = cipher.getAuthTag();
+
+  return {
+    iv: iv.toString('hex'),
+    content: encrypted,
+    authTag: authTag.toString('hex'),
+  };
+}
+
+export function symmetricDecrypt(encrypted: { iv: string; content: string; authTag: string }, keyHex: string): string {
+  const key = Buffer.from(keyHex, 'hex');
+  const iv = Buffer.from(encrypted.iv, 'hex');
+  const authTag = Buffer.from(encrypted.authTag, 'hex');
+
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(encrypted.content, 'base64', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}

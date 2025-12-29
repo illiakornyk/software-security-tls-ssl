@@ -1,7 +1,13 @@
-export type HandshakeType = 'CLIENT_HELLO' | 'SERVER_HELLO' | 'PREMASTER' | 'READY_CLIENT' | 'READY_SERVER';
+export enum HandshakeStep {
+  CLIENT_HELLO = 'CLIENT_HELLO',
+  SERVER_HELLO = 'SERVER_HELLO',
+  PREMASTER = 'PREMASTER',
+  READY_CLIENT = 'READY_CLIENT',
+  READY_SERVER = 'READY_SERVER',
+}
 
 export interface HandshakePayload {
-  step: HandshakeType;
+  step: HandshakeStep;
   random?: string;
   certificate?: any;
   data?: string;
@@ -16,8 +22,14 @@ export interface TopologyData {
   nodes: Record<string, NodeConfig>;
 }
 
+export enum MessageType {
+  HANDSHAKE = 'HANDSHAKE',
+  DATA = 'DATA',
+  BROADCAST = 'BROADCAST',
+}
+
 export interface AppMessage {
-  type: 'HANDSHAKE' | 'DATA' | 'BROADCAST';
+  type: MessageType;
   payload: any;
 }
 
