@@ -28,9 +28,20 @@ export enum MessageType {
   BROADCAST = 'BROADCAST',
 }
 
+export interface EncryptedPayload {
+  encrypted: true;
+  iv: string;
+  content: string;
+  authTag: string;
+}
+
+export type DataPayload = string | EncryptedPayload;
+
+export type AppPayload = HandshakePayload | DataPayload;
+
 export interface AppMessage {
   type: MessageType;
-  payload: any;
+  payload: AppPayload;
 }
 
 export interface TransportFrame {

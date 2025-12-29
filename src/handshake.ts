@@ -2,11 +2,11 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import 'dotenv/config';
 import { generateKeyPair, publicEncrypt, privateDecrypt, symmetricEncrypt, symmetricDecrypt, verifySignature } from './cryptoUtils.js';
-import type { Certificate, SecurityContext, HandshakePayload } from './types.js';
+import type { Certificate, SecurityContext, HandshakePayload, AppPayload, DataPayload } from './types.js';
 import { HandshakeStep, MessageType } from './types.js';
 
 export interface HandshakeCallbacks {
-  sendAppMessage: (target: string, type: MessageType, payload: any) => void;
+  sendAppMessage: (target: string, type: MessageType, payload: AppPayload) => void;
   onSecureChannelEstablished: (targetId: string) => void;
 }
 
@@ -71,9 +71,9 @@ export class HandshakeManager {
     });
   }
 
-  public getSecurePayload(target: string, payload: any): any {
+  public getSecurePayload(target: string, payload: AppPayload): AppPayload {
     const session = this.securitySessions.get(target);
-    if (session?.state === 'SECURE' && session.sessionKey) {
+    if (session?.state === 'SECURE' && session.sessionKey && typeof payload === 'string') {
        console.log(`[SECURE] Encrypting data with Session Key...`);
        return {
          encrypted: true,
@@ -83,8 +83,8 @@ export class HandshakeManager {
     return payload;
   }
 
-  public getDecryptedPayload(target: string, payload: any): any {
-     if (payload && payload.encrypted) {
+  public getDecryptedPayload(target: string, payload: AppPayload): AppPayload {
+     if (typeof payload === 'object' && 'encrypted' in payload && payload.encrypted) {
          const session = this.securitySessions.get(target);
          if (session?.state === 'SECURE' && session.sessionKey) {
              try {

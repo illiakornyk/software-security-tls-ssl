@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { TransportLayer } from './transport.js';
 import { HandshakeManager } from './handshake.js';
 import { CLI } from './cli.js';
-import type { AppMessage } from './types.js';
+import type { AppMessage, HandshakePayload } from './types.js';
 import { MessageType } from './types.js';
 import { BROADCAST_ID } from './constants.js';
 
@@ -33,7 +33,7 @@ async function main() {
     },
     onAppMessageReceived: (appMsg: AppMessage, src: string) => {
        if (appMsg.type === MessageType.HANDSHAKE) {
-         handshake.handleHandshakeMsg(src, appMsg.payload);
+         handshake.handleHandshakeMsg(src, appMsg.payload as HandshakePayload);
        } else if (appMsg.type === MessageType.DATA) {
          const decrypted = handshake.getDecryptedPayload(src, appMsg.payload);
          console.log(`\n>>> [RECEIVED] From Node ${src}:`, decrypted);

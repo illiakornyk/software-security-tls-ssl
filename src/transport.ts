@@ -1,7 +1,7 @@
 import net from 'node:net';
 import { v4 as uuidv4 } from 'uuid';
 import { getNextHop } from './router.js';
-import type { TransportFrame, AppMessage, TopologyData } from './types.js';
+import type { TransportFrame, AppMessage, TopologyData, AppPayload } from './types.js';
 import { MessageType } from './types.js';
 import topologyData from '../topology.json' with { type: 'json' };
 import { MTU, BROADCAST_ID } from './constants.js';
@@ -149,7 +149,7 @@ export class TransportLayer {
     }
   }
 
-  public sendAppMessage(target: string, type: MessageType, payload: any) {
+  public sendAppMessage(target: string, type: MessageType, payload: AppPayload) {
     const fullData = JSON.stringify({ type, payload });
     const msgId = uuidv4();
 
