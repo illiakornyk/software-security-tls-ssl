@@ -8,7 +8,6 @@ import { MTU, BROADCAST_ID } from './constants.js';
 
 const topology = (topologyData as TopologyData).nodes;
 
-// State needed for reassembly
 const reassemblyBuffer = new Map<string, { total: number; chunks: Map<number, string> }>();
 const seenFragments = new Set<string>();
 
@@ -70,9 +69,9 @@ export class TransportLayer {
       return;
     }
 
-    // 2. Unicast Handling
+
     if (frame.dst === this.myId) {
-      this.callbacks.onFrameReceived(frame); // Pass the frame up for processing
+      this.callbacks.onFrameReceived(frame);
       this.processReassembly(frame, (appMsg) => {
         this.callbacks.onAppMessageReceived(appMsg, frame.src);
       });
@@ -104,7 +103,6 @@ export class TransportLayer {
     });
 
     client.on('error', (err) => {
-       // Silent fail or log
     });
   }
 

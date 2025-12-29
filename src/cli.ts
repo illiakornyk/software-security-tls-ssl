@@ -1,4 +1,5 @@
 import readline from 'node:readline';
+import { CLICommand } from './types.js';
 
 export interface CLICallbacks {
   onConnect: (target: string) => void;
@@ -29,22 +30,22 @@ export class CLI {
     this.rl.question(`Node ${this.myId} > `, (line) => {
       const [cmd, target, ...text] = line.split(' ');
 
-      if (cmd === 'connect' && target) {
+      if (cmd === CLICommand.CONNECT && target) {
         this.callbacks.onConnect(target);
         setTimeout(() => this.promptUser(), 100);
-      } else if (cmd === 'send' && target && text.length > 0) {
+      } else if (cmd === CLICommand.SEND && target && text.length > 0) {
         this.callbacks.onSend(target, text.join(' '));
         setTimeout(() => this.promptUser(), 100);
-      } else if (cmd === 'broadcast' && target) {
+      } else if (cmd === CLICommand.BROADCAST && target) {
         const broadcastMsg = [target, ...text].join(' ');
         this.callbacks.onBroadcast(broadcastMsg);
         setTimeout(() => this.promptUser(), 100);
       } else {
         if (line.trim() !== '') {
           console.log('Usage:');
-          console.log('  connect <targetID>   -> Start TLS Handshake');
-          console.log('  send <targetID> <msg> -> Send text message');
-          console.log('  broadcast <msg>      -> Send to everyone');
+          console.log(`  ${CLICommand.CONNECT} <targetID>   -> Start TLS Handshake`);
+          console.log(`  ${CLICommand.SEND} <targetID> <msg> -> Send text message`);
+          console.log(`  ${CLICommand.BROADCAST} <msg>      -> Send to everyone`);
         }
         this.promptUser();
       }

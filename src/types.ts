@@ -57,3 +57,9 @@ export interface SecurityContext {
   premasterSecret?: string;
   sessionKey?: string;
 }
+
+export enum CLICommand {
+  CONNECT = 'connect',
+  SEND = 'send',
+  BROADCAST = 'broadcast',
+}

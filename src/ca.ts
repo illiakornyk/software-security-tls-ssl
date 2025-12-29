@@ -1,6 +1,6 @@
 import http from 'node:http';
 import 'dotenv/config';
-import { generateKeyPair, signCertificate, verifySignature } from './cryptoUtils.js';
+import { generateKeyPair, signCertificate } from './cryptoUtils.js';
 
 console.log('[CA] Generating Root Keys...');
 const { publicKey: CA_PUBLIC_KEY, privateKey: CA_PRIVATE_KEY } = generateKeyPair();
@@ -33,16 +33,6 @@ const server = http.createServer((req, res) => {
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ certificate, caPublicKey: CA_PUBLIC_KEY }));
-      } else if (req.url === '/verify') {
-        const { certificate } = payload;
-        const { signature, ...certData } = certificate;
-
-        const isValid = verifySignature(certData, signature, CA_PUBLIC_KEY);
-
-        console.log(`[CA] Verification request for Node ${certData.subject}: ${isValid ? 'VALID' : 'INVALID'}`);
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ valid: isValid }));
       }
     } catch (e) {
       console.error(e);
