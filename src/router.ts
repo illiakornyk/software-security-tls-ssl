@@ -1,5 +1,5 @@
-import type { TopologyData } from './types.js';
 import topologyData from '../topology.json' with { type: 'json' };
+import type { TopologyData } from './types.js';
 
 const topology = (topologyData as TopologyData).nodes;
 

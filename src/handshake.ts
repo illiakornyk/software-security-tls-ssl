@@ -1,8 +1,15 @@
-import http from 'node:http';
-import crypto from 'node:crypto';
 import 'dotenv/config';
-import { generateKeyPair, publicEncrypt, privateDecrypt, symmetricEncrypt, symmetricDecrypt, verifySignature } from './cryptoUtils.js';
-import type { Certificate, SecurityContext, HandshakePayload, AppPayload, DataPayload } from './types.js';
+import crypto from 'node:crypto';
+import http from 'node:http';
+import {
+  generateKeyPair,
+  privateDecrypt,
+  publicEncrypt,
+  symmetricDecrypt,
+  symmetricEncrypt,
+  verifySignature,
+} from './cryptoUtils.js';
+import type { AppPayload, Certificate, HandshakePayload, SecurityContext } from './types.js';
 import { HandshakeStep, MessageType } from './types.js';
 
 export interface HandshakeCallbacks {
@@ -74,46 +81,48 @@ export class HandshakeManager {
   public getSecurePayload(target: string, payload: AppPayload): AppPayload {
     const session = this.securitySessions.get(target);
     if (session?.state === 'SECURE' && session.sessionKey && typeof payload === 'string') {
-       console.log(`[SECURE] Encrypting data with Session Key...`);
-       return {
-         encrypted: true,
-         ...symmetricEncrypt(payload, session.sessionKey),
-       };
+      console.log(`[SECURE] Encrypting data with Session Key...`);
+      return {
+        encrypted: true,
+        ...symmetricEncrypt(payload, session.sessionKey),
+      };
     }
     return payload;
   }
 
   public getDecryptedPayload(target: string, payload: AppPayload): AppPayload {
-     if (typeof payload === 'object' && 'encrypted' in payload && payload.encrypted) {
-         const session = this.securitySessions.get(target);
-         if (session?.state === 'SECURE' && session.sessionKey) {
-             try {
-                 return symmetricDecrypt(payload, session.sessionKey);
-             } catch (e) {
-                 console.error('[SECURE] Decryption failed!', e);
-                 return '[Decryption Failed]';
-             }
-         } else {
-             console.warn('[SECURE] Received encrypted message but no session key available');
-         }
-     }
-     return payload;
+    if (typeof payload === 'object' && 'encrypted' in payload && payload.encrypted) {
+      const session = this.securitySessions.get(target);
+      if (session?.state === 'SECURE' && session.sessionKey) {
+        try {
+          return symmetricDecrypt(payload, session.sessionKey);
+        } catch (e) {
+          console.error('[SECURE] Decryption failed!', e);
+          return '[Decryption Failed]';
+        }
+      } else {
+        console.warn(
+          `[SECURE] Received encrypted message but session invalid. State: ${session?.state}, Key: ${!!session?.sessionKey}`,
+        );
+      }
+    }
+    return payload;
   }
 
   public initiateHandshake(target: string) {
-      console.log(`[HANDSHAKE] Initiating TLS with Node ${target}...`);
+    console.log(`[HANDSHAKE] Initiating TLS with Node ${target}...`);
 
-      const session = this.getSession(target);
-      session.state = 'HANDSHAKE_STARTED';
-      session.myRandom = crypto.randomBytes(16).toString('hex');
+    const session = this.getSession(target);
+    session.state = 'HANDSHAKE_STARTED';
+    session.myRandom = crypto.randomBytes(16).toString('hex');
 
-      this.callbacks.sendAppMessage(target, MessageType.HANDSHAKE, {
-        step: HandshakeStep.CLIENT_HELLO,
-        random: session.myRandom,
-      });
+    this.callbacks.sendAppMessage(target, MessageType.HANDSHAKE, {
+      step: HandshakeStep.CLIENT_HELLO,
+      random: session.myRandom,
+    });
   }
 
-  public async handleHandshakeMsg(src: string, payload: HandshakePayload) {
+  public handleHandshakeMsg(src: string, payload: HandshakePayload) {
     const session = this.getSession(src);
     console.log(`[HANDSHAKE] Received ${payload.step} from Node ${src}`);
 
@@ -127,8 +136,8 @@ export class HandshakeManager {
         session.myRandom = crypto.randomBytes(16).toString('hex');
 
         if (!this.myCertificate) {
-             console.error('[HANDSHAKE] My certificate is not ready yet!');
-             return;
+          console.error('[HANDSHAKE] My certificate is not ready yet!');
+          return;
         }
         console.log(`[HANDSHAKE] Sending Server Certificate...`);
         this.callbacks.sendAppMessage(src, MessageType.HANDSHAKE, {
@@ -138,7 +147,7 @@ export class HandshakeManager {
         });
         break;
 
-      case HandshakeStep.SERVER_HELLO:
+      case HandshakeStep.SERVER_HELLO: {
         if (payload.random === undefined || !payload.certificate) {
           console.error(`[ERROR] Invalid SERVER_HELLO from Node ${src}`);
           return;
@@ -146,7 +155,7 @@ export class HandshakeManager {
         session.peerRandom = payload.random;
         session.peerCert = payload.certificate;
 
-        const isValid = await this.verifyWithCA(session.peerCert);
+        const isValid = this.verifyWithCA(session.peerCert);
         if (!isValid) {
           console.error(`[Security] ALERT! Node ${src} has an INVALID certificate! Aborting.`);
           return;
@@ -162,10 +171,11 @@ export class HandshakeManager {
         });
 
         this.deriveSessionKey(session);
-        this.sendReadyMessage(src, session, HandshakeStep.READY_CLIENT);
-        break;
 
-      case HandshakeStep.PREMASTER:
+        break;
+      }
+
+      case HandshakeStep.PREMASTER: {
         if (!this.keyPair.privateKey) return;
         try {
           session.premasterSecret = privateDecrypt(payload.data!, this.keyPair.privateKey);
@@ -177,6 +187,7 @@ export class HandshakeManager {
           console.error('Decryption failed', e);
         }
         break;
+      }
 
       case HandshakeStep.READY_CLIENT:
         if (this.decryptAndVerifyReady(payload.data!, session)) {
@@ -191,6 +202,8 @@ export class HandshakeManager {
           console.log(`\n [Secure channel established] with Node ${src}\n`);
           session.state = 'SECURE';
           this.callbacks.onSecureChannelEstablished(src);
+
+          this.sendReadyMessage(src, session, HandshakeStep.READY_CLIENT);
         }
         break;
     }
@@ -219,7 +232,11 @@ export class HandshakeManager {
     console.log(`[Security] Derived Session Key: ${session.sessionKey.substring(0, 10)}... (based on sorted randoms)`);
   }
 
-  private sendReadyMessage(target: string, session: SecurityContext, step: HandshakeStep.READY_CLIENT | HandshakeStep.READY_SERVER) {
+  private sendReadyMessage(
+    target: string,
+    session: SecurityContext,
+    step: HandshakeStep.READY_CLIENT | HandshakeStep.READY_SERVER,
+  ) {
     const readyText = `READY:${session.sessionKey?.substring(0, 5)}`;
     this.callbacks.sendAppMessage(target, MessageType.HANDSHAKE, {
       step: step,
@@ -228,10 +245,19 @@ export class HandshakeManager {
   }
 
   private decryptAndVerifyReady(data: string, session: SecurityContext): boolean {
-    return data.startsWith('READY');
+    if (!session.sessionKey) {
+      console.error('[VerifyReady] No session key available!');
+      return false;
+    }
+    const expected = `READY:${session.sessionKey.substring(0, 5)}`;
+    if (data !== expected) {
+      console.error(`[VerifyReady] FAILED! Received: '${data}', Expected: '${expected}'`);
+      return false;
+    }
+    return true;
   }
 
-  private async verifyWithCA(cert: Certificate): Promise<boolean> {
+  private verifyWithCA(cert: Certificate): boolean {
     if (!this.caPublicKey) {
       console.error('[Security] Cannot verify certificate: No CA Public Key available');
       return false;

@@ -1,10 +1,10 @@
 import net from 'node:net';
 import { v4 as uuidv4 } from 'uuid';
-import { getNextHop } from './router.js';
-import type { TransportFrame, AppMessage, TopologyData, AppPayload } from './types.js';
-import { MessageType } from './types.js';
 import topologyData from '../topology.json' with { type: 'json' };
-import { MTU, BROADCAST_ID } from './constants.js';
+import { BROADCAST_ID, MTU } from './constants.js';
+import { getNextHop } from './router.js';
+import type { AppMessage, AppPayload, TopologyData, TransportFrame } from './types.js';
+import { MessageType } from './types.js';
 
 const topology = (topologyData as TopologyData).nodes;
 
@@ -38,7 +38,7 @@ export class TransportLayer {
         try {
           const frame: TransportFrame = JSON.parse(data.toString());
           this.handleFrame(frame);
-        } catch (e) {
+        } catch {
           console.error('Buffer error (packet overlap or corruption)');
         }
       });
@@ -54,7 +54,6 @@ export class TransportLayer {
   }
 
   private handleFrame(frame: TransportFrame) {
-    // 1. Broadcast Handling
     if (frame.dst === BROADCAST_ID) {
       const fragmentKey = `${frame.id}:${frame.seq}`;
       if (seenFragments.has(fragmentKey)) return;
@@ -68,7 +67,6 @@ export class TransportLayer {
       });
       return;
     }
-
 
     if (frame.dst === this.myId) {
       this.callbacks.onFrameReceived(frame);
@@ -102,8 +100,7 @@ export class TransportLayer {
       client.end();
     });
 
-    client.on('error', (err) => {
-    });
+    client.on('error', () => {});
   }
 
   private broadcastToNeighbors(frame: TransportFrame) {
@@ -143,7 +140,7 @@ export class TransportLayer {
       try {
         const appMsg: AppMessage = JSON.parse(fullString);
         onComplete(appMsg);
-      } catch (e) {
+      } catch {
         console.error('Failed to parse reassembled JSON');
       }
     }
@@ -160,18 +157,18 @@ export class TransportLayer {
     console.log(`[FRAGMENTATION] Splitting ${fullData.length} bytes into ${totalFrames} frames...`);
 
     for (let i = 0; i < totalFrames; i++) {
-        const chunk = fullData.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-        const frame: TransportFrame = {
-            id: msgId,
-            src: this.myId,
-            dst: target,
-            seq: i,
-            total: totalFrames,
-            data: chunk,
-        };
-        setTimeout(() => {
-            this.sendFrameOverWire(frame);
-        }, i * 100);
+      const chunk = fullData.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const frame: TransportFrame = {
+        id: msgId,
+        src: this.myId,
+        dst: target,
+        seq: i,
+        total: totalFrames,
+        data: chunk,
+      };
+      setTimeout(() => {
+        this.sendFrameOverWire(frame);
+      }, i * 100);
     }
   }
 }

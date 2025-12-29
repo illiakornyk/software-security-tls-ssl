@@ -1,5 +1,5 @@
-import http from 'node:http';
 import 'dotenv/config';
+import http from 'node:http';
 import { generateKeyPair, signCertificate } from './cryptoUtils.js';
 
 console.log('[CA] Generating Root Keys...');
